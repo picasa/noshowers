@@ -1,0 +1,69 @@
+```{r setup, message=FALSE, warning=FALSE, echo=FALSE}
+# Packages
+library(tidync)
+library(lubridate)
+library(tidyverse)
+library(broom)
+library(modelr)
+library(ggplot2)
+library(knitr)
+
+# options
+opts_knit$set(root.dir = normalizePath('../'))
+opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+options(knitr.kable.NA = '')
+theme_set(theme_bw())
+
+value_dpi <- 200
+```
+
+```{r figures}
+# threshold used to compute the frequency of moderate or strong rain events
+threshold_rain <- 2
+
+# define the range of hours to analyse
+range_time <- data.frame(xmin=8, xmax=9, ymin=-Inf, ymax=Inf)
+
+# load raw climate data
+data_climate <- read_rds("data/priv/climate_9010.rds")
+
+# compute frequency of rain events during each daily commute
+data_rain <- data_climate %>% 
+  group_by(grid_id, year, hour) %>% 
+  summarise(
+    f_rain = length(rain[rain > 0]) / n(),
+    f_rain_strong = length(rain[rain > threshold_rain]) / n(),
+    f_rain_moderate = length(rain[rain <= threshold_rain & rain > 0]) / n(),
+    f_dry = 1 - f_rain,
+  )
+
+plot_rain_frequency <- data_rain %>% 
+  select(year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
+  pivot_longer(cols=c(strong, moderate, dry), names_to = "event") %>% 
+  mutate(event = factor(event, levels = c("strong", "moderate", "dry"))) %>% 
+  ggplot(aes(x=hour, y=value, fill=event)) +
+  geom_col() +
+  facet_wrap(vars(year)) + 
+  scale_fill_viridis_d(end = 0.9)
+
+plot_rain_model <- data_rain %>%
+  ggplot(aes(x=hour, y=f_dry)) +
+  geom_point() + geom_smooth(se=FALSE) +
+  geom_rect(
+    data=range_time,
+    aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
+    inherit.aes = FALSE, alpha=0.5)
+
+plot_hourly <- data_climate %>%
+  filter(date < ymd("1999-08-05")) %>% 
+  ggplot(aes(x=date, y=rain)) +
+  geom_line()
+
+table_daily <- data_climate %>%
+  group_by(yday) %>% 
+  summarise(rain = sum(rain)) %>% 
+  filter(rain > 10)
+
+
+```
+

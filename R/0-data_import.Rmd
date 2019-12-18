@@ -1,0 +1,79 @@
+
+```{r setup, message=FALSE, warning=FALSE, echo=FALSE}
+# Packages
+library(tidync)
+library(lubridate)
+library(tidyverse)
+library(knitr)
+
+# options
+opts_knit$set(root.dir = normalizePath('../'))
+opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
+
+# path to hourly climate files
+path_climate <- "~/Documents/INRA/Database/db_safran_hourly"
+
+# extract climate data at given coordinates from hourly nc files
+get_climate_nc <- function(file, grid_id = 9010) {
+  
+  value_origin <- ncmeta::nc_atts(file) %>%
+    filter(name == "units", variable=="time") %>% 
+    unnest(cols = c(value)) %>% 
+    pull(value) %>% 
+    substr(15, 33)
+    
+  nc_subset <- tidync(file) %>%
+    hyper_filter(Number_of_points = Number_of_points %in% grid_id)
+  
+  # get climate data from nc file
+  data <- nc_subset %>% hyper_tibble()
+  
+  # add time variables and transform climate variables
+  # hour correspond to the end of the time interval
+  data_climate <- data %>% 
+    mutate(
+      grid_id = Number_of_points,
+      rain = (Rainf + Snowf) * 3600,
+      temperature = Tair - 273.15,
+      date = seconds(time) %>% as_datetime(origin=value_origin),
+      year = year(date),
+      yday = yday(date),
+      hour = hour(date)
+    ) %>% 
+    select(grid_id, date, year, yday, hour, rain, wind=Wind, temperature)
+}
+
+```
+
+
+```{r metadata, eval=FALSE}
+list_files <- list.files(path_climate, full.names = TRUE)
+
+file <- list_files[1]
+
+nc <- tidync(file)
+
+data_grid <- nc %>% activate("D0") %>% hyper_tibble()
+
+table_unit <- ncmeta::nc_atts(file) %>%
+  filter(name == "units") %>% 
+  unnest(cols = c(value)) 
+
+```
+
+
+```{r data}
+
+# list of locations where data is produced
+list_towns <- c("Toulouse", "Caen")
+grid_id = 9010
+
+# extract hourly climate data from a list of files
+list_files <- list.files(path_climate, full.names = TRUE)
+
+data_climate <- list_files[1:5] %>% map(get_climate_nc)
+
+# export
+write_rds(bind_rows(data_climate), paste0("data/priv/climate_",grid_id,".rds"), compress="gz")
+```
+
