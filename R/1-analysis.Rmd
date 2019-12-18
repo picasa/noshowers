@@ -1,6 +1,5 @@
 ```{r setup, message=FALSE, warning=FALSE, echo=FALSE}
 # Packages
-library(tidync)
 library(lubridate)
 library(tidyverse)
 library(broom)
@@ -18,6 +17,9 @@ value_dpi <- 200
 ```
 
 ```{r figures}
+# define range of year to study (full years)
+list_years <- 2000:2018
+
 # threshold used to compute the frequency of moderate or strong rain events
 threshold_rain <- 2
 
@@ -29,6 +31,7 @@ data_climate <- read_rds("data/priv/climate_9010.rds")
 
 # compute frequency of rain events during each daily commute
 data_rain <- data_climate %>% 
+  filter(year %in% list_years) %>% 
   group_by(grid_id, year, hour) %>% 
   summarise(
     f_rain = length(rain[rain > 0]) / n(),
@@ -52,18 +55,13 @@ plot_rain_model <- data_rain %>%
   geom_rect(
     data=range_time,
     aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
-    inherit.aes = FALSE, alpha=0.5)
+    inherit.aes = FALSE, alpha=0.5) +
+  facet_wrap(vars(year)) 
 
-plot_hourly <- data_climate %>%
-  filter(date < ymd("1999-08-05")) %>% 
-  ggplot(aes(x=date, y=rain)) +
-  geom_line()
-
-table_daily <- data_climate %>%
-  group_by(yday) %>% 
-  summarise(rain = sum(rain)) %>% 
-  filter(rain > 10)
-
+plot_rain_change <- data_rain %>% 
+  filter(hour %in% 8:10) %>% 
+  ggplot(aes(x=year, y=f_dry, color=as.factor(hour))) +
+  geom_point() + geom_smooth(method = "lm")
 
 ```
 

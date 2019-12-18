@@ -71,7 +71,7 @@ grid_id = 9010
 # extract hourly climate data from a list of files
 list_files <- list.files(path_climate, full.names = TRUE)
 
-data_climate <- list_files[1:5] %>% map(get_climate_nc)
+data_climate <- list_files[1:20] %>% map(get_climate_nc)
 
 # export
 write_rds(bind_rows(data_climate), paste0("data/priv/climate_",grid_id,".rds"), compress="gz")
