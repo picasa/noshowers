@@ -5,6 +5,7 @@ library(tidync)
 library(lubridate)
 library(tidyverse)
 library(knitr)
+library(agroenv)
 
 # options
 opts_knit$set(root.dir = normalizePath('../'))
@@ -14,14 +15,15 @@ opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 path_climate <- "~/Documents/INRA/Database/db_safran_hourly"
 
 # extract climate data at given coordinates from hourly nc files
-get_climate_nc <- function(file, grid_id = 9010) {
+get_climate_nc <- function(file, grid_id) {
   
   value_origin <- ncmeta::nc_atts(file) %>%
     filter(name == "units", variable=="time") %>% 
     unnest(cols = c(value)) %>% 
     pull(value) %>% 
     substr(15, 33)
-    
+  
+  # TODO tidync should be able to filter on non contiguous index  
   nc_subset <- tidync(file) %>%
     hyper_filter(Number_of_points = Number_of_points %in% grid_id)
   
@@ -65,15 +67,22 @@ table_unit <- ncmeta::nc_atts(file) %>%
 ```{r data}
 
 # list of locations where data is produced
-list_towns <- c("Toulouse", "Caen")
-grid_id = 9010
+table_location <- tibble(
+  id=c("Toulouse","Caen", "Montpellier"),
+  latitude = c(43.5476, 49.1305, 43.5555),
+  longitude = c(1.4447, -0.3708, 3.8782)
+  ) 
+
+list_grid <- table_location %>%
+  pmap_df(agroenv::get_station, network="safran") %>% 
+  slice(3)
 
 # extract hourly climate data from a list of files
 list_files <- list.files(path_climate, full.names = TRUE)
 
-data_climate <- list_files[1:20] %>% map(get_climate_nc)
+data_climate <- list_files[1:20] %>% map(get_climate_nc, grid_id=list_grid$station_id)
 
 # export
-write_rds(bind_rows(data_climate), paste0("data/priv/climate_",grid_id,".rds"), compress="gz")
+write_rds(bind_rows(data_climate), paste0("data/priv/climate_",list_grid$station_id,".rds"), compress="gz")
 ```
 

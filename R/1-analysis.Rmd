@@ -17,7 +17,7 @@ value_dpi <- 200
 ```
 
 ```{r figures}
-# define range of year to study (full years)
+# define range of year to study (full years only)
 list_years <- 2000:2018
 
 # threshold used to compute the frequency of moderate or strong rain events
@@ -27,7 +27,8 @@ threshold_rain <- 2
 range_time <- data.frame(xmin=8, xmax=9, ymin=-Inf, ymax=Inf)
 
 # load raw climate data
-data_climate <- read_rds("data/priv/climate_9010.rds")
+list_files <- list.files("data/priv", full.names = TRUE)
+data_climate <- list_files %>% map_df(read_rds)
 
 # compute frequency of rain events during each daily commute
 data_rain <- data_climate %>% 
@@ -40,28 +41,35 @@ data_rain <- data_climate %>%
     f_dry = 1 - f_rain,
   )
 
+# export processed data
+write_rds(data_rain, "data/data_frequency_rain.rds", compress = "gz")
+```
+
+```{r figures}
 plot_rain_frequency <- data_rain %>% 
-  select(year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
+  select(grid_id, year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
   pivot_longer(cols=c(strong, moderate, dry), names_to = "event") %>% 
   mutate(event = factor(event, levels = c("strong", "moderate", "dry"))) %>% 
   ggplot(aes(x=hour, y=value, fill=event)) +
   geom_col() +
-  facet_wrap(vars(year)) + 
+  facet_grid(rows=vars(grid_id), cols=vars(year)) + 
   scale_fill_viridis_d(end = 0.9)
 
 plot_rain_model <- data_rain %>%
   ggplot(aes(x=hour, y=f_dry)) +
-  geom_point() + geom_smooth(se=FALSE) +
+  geom_point(alpha=0.5) + geom_smooth(se=FALSE) +
   geom_rect(
     data=range_time,
     aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
     inherit.aes = FALSE, alpha=0.5) +
-  facet_wrap(vars(year)) 
+  geom_hline(yintercept = 0.8, color="red") +
+  facet_grid(cols=vars(grid_id))
 
 plot_rain_change <- data_rain %>% 
   filter(hour %in% 8:10) %>% 
   ggplot(aes(x=year, y=f_dry, color=as.factor(hour))) +
-  geom_point() + geom_smooth(method = "lm")
+  geom_point() + geom_smooth(method = "lm") +
+  facet_grid(cols=vars(grid_id))
 
 ```
 
