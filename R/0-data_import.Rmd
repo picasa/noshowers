@@ -11,9 +11,6 @@ library(agroenv)
 opts_knit$set(root.dir = normalizePath('../'))
 opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 
-# path to hourly climate files
-path_climate <- "~/Documents/INRA/Database/db_safran_hourly"
-
 # extract climate data at given coordinates from hourly nc files
 get_climate_nc <- function(file, grid_id) {
   
@@ -64,25 +61,30 @@ table_unit <- ncmeta::nc_atts(file) %>%
 ```
 
 
-```{r data}
+```{r data_raw}
+# path to hourly climate files
+path_climate <- "~/Documents/INRA/Database/db_safran_hourly"
 
-# list of locations where data is produced
+# list of locations to extract data
 table_location <- tibble(
-  id=c("Toulouse","Caen", "Montpellier"),
-  latitude = c(43.5476, 49.1305, 43.5555),
-  longitude = c(1.4447, -0.3708, 3.8782)
-  ) 
+  id=c("Auzeville","Caen", "Montpellier"),
+  latitude = c(43.5279, 49.1305, 43.5555),
+  longitude = c(1.5009, -0.3708, 3.8782)
+  ) %>% 
+  group_by(id) %>% 
+  do(agroenv::get_station(.$latitude, .$longitude, network="safran")) %>% 
+  rename(grid_id = station_id) %>% 
+  ungroup()
 
-list_grid <- table_location %>%
-  pmap_df(agroenv::get_station, network="safran") %>% 
-  slice(3)
+list_grid <- table_location %>% slice(3)
 
 # extract hourly climate data from a list of files
 list_files <- list.files(path_climate, full.names = TRUE)
 
-data_climate <- list_files[1:20] %>% map(get_climate_nc, grid_id=list_grid$station_id)
+data_climate <- list_files[1:20] %>% map(get_climate_nc, grid_id=list_grid$grid_id)
 
 # export
-write_rds(bind_rows(data_climate), paste0("data/priv/climate_",list_grid$station_id,".rds"), compress="gz")
+write_csv(table_location, "data/table_stations.csv")
+write_rds(bind_rows(data_climate), paste0("data/priv/climate_",list_grid$grid_id,".rds"), compress="gz")
 ```
 

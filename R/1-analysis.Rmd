@@ -1,10 +1,12 @@
 ```{r setup, message=FALSE, warning=FALSE, echo=FALSE}
 # Packages
+library(readr)
 library(lubridate)
 library(tidyverse)
 library(broom)
 library(modelr)
 library(ggplot2)
+library(gganimate)
 library(knitr)
 
 # options
@@ -16,7 +18,10 @@ theme_set(theme_bw())
 value_dpi <- 200
 ```
 
-```{r figures}
+```{r data_frequency, eval=FALSE}
+# load table for available climate stations
+table_stations <- read_csv("data/table_stations.csv")
+
 # define range of year to study (full years only)
 list_years <- 2000:2018
 
@@ -28,16 +33,21 @@ range_time <- data.frame(xmin=8, xmax=9, ymin=-Inf, ymax=Inf)
 
 # load raw climate data
 list_files <- list.files("data/priv", full.names = TRUE)
-data_climate <- list_files %>% map_df(read_rds)
+
+data_climate <- list_files %>% map_df(read_rds) %>% 
+  left_join(table_stations)
 
 # compute frequency of rain events during each daily commute
 data_rain <- data_climate %>% 
   filter(year %in% list_years) %>% 
-  group_by(grid_id, year, hour) %>% 
+  group_by(id, grid_id, year, hour) %>% 
   summarise(
-    f_rain = length(rain[rain > 0]) / n(),
-    f_rain_strong = length(rain[rain > threshold_rain]) / n(),
-    f_rain_moderate = length(rain[rain <= threshold_rain & rain > 0]) / n(),
+    n_rain = length(rain[rain > 0]),
+    n_rain_strong = length(rain[rain > threshold_rain]),
+    n_rain_moderate = length(rain[rain <= threshold_rain & rain > 0]),
+    f_rain = n_rain / n(),
+    f_rain_strong =  n_rain_strong / n(),
+    f_rain_moderate =  n_rain_moderate / n(),
     f_dry = 1 - f_rain,
   )
 
@@ -45,16 +55,10 @@ data_rain <- data_climate %>%
 write_rds(data_rain, "data/data_frequency_rain.rds", compress = "gz")
 ```
 
-```{r figures}
-plot_rain_frequency <- data_rain %>% 
-  select(grid_id, year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
-  pivot_longer(cols=c(strong, moderate, dry), names_to = "event") %>% 
-  mutate(event = factor(event, levels = c("strong", "moderate", "dry"))) %>% 
-  ggplot(aes(x=hour, y=value, fill=event)) +
-  geom_col() +
-  facet_grid(rows=vars(grid_id), cols=vars(year)) + 
-  scale_fill_viridis_d(end = 0.9)
+```{r figures_static}
 
+data_rain <- read_rds("data/data_frequency_rain.rds")
+  
 plot_rain_model <- data_rain %>%
   ggplot(aes(x=hour, y=f_dry)) +
   geom_point(alpha=0.5) + geom_smooth(se=FALSE) +
@@ -63,13 +67,42 @@ plot_rain_model <- data_rain %>%
     aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
     inherit.aes = FALSE, alpha=0.5) +
   geom_hline(yintercept = 0.8, color="red") +
-  facet_grid(cols=vars(grid_id))
+  facet_grid(cols=vars(id)) +
+  labs(y="Frequency of a dry commute occuring during a [n-1, n] hour interval ")
 
 plot_rain_change <- data_rain %>% 
   filter(hour %in% 8:10) %>% 
   ggplot(aes(x=year, y=f_dry, color=as.factor(hour))) +
   geom_point() + geom_smooth(method = "lm") +
-  facet_grid(cols=vars(grid_id))
+  facet_grid(cols=vars(id))
+
+# number of days with moderate or strong rain
 
 ```
 
+```{r figures_animation}
+data_rain <- read_rds("data/data_frequency_rain.rds")
+
+plot_frequency <- data_rain %>% 
+  select(id, year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
+  pivot_longer(cols=c(strong, moderate, dry), names_to = "event") %>% 
+  mutate(event = factor(event, levels = c("strong", "moderate", "dry"))) %>%
+  ggplot(aes(x=hour, y=value, fill=event)) +
+  geom_col() +
+  geom_hline(yintercept = 0.8, color="red") +
+  facet_grid(cols = vars(id)) +
+  scale_fill_viridis_d(end = 0.9) +
+  labs(
+    x = "Time at arrival",
+    y = "Frequency of events occuring during a one hour interval"
+  )
+
+plot_frequency_anim <- plot_frequency + 
+  transition_states(year, transition_length = 2, state_length = 1) +
+  ggtitle('Hourly rain events during year {closest_state}')
+
+animate(plot_frequency_anim, width = 600, height = 400, res = 80)
+
+anim_save()
+
+```
