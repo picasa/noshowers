@@ -67,7 +67,7 @@ path_climate <- "~/Documents/INRA/Database/db_safran_hourly"
 
 # list of locations to extract data
 table_location <- tibble(
-  id=c("Auzeville","Caen", "Montpellier"),
+  id=c("Toulouse","Caen", "Montpellier"),
   latitude = c(43.5279, 49.1305, 43.5555),
   longitude = c(1.5009, -0.3708, 3.8782)
   ) %>% 
@@ -76,7 +76,7 @@ table_location <- tibble(
   rename(grid_id = station_id) %>% 
   ungroup()
 
-list_grid <- table_location %>% slice(3)
+list_grid <- table_location %>% slice(1)
 
 # extract hourly climate data from a list of files
 list_files <- list.files(path_climate, full.names = TRUE)

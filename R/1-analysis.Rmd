@@ -15,6 +15,8 @@ opts_chunk$set(echo=FALSE, warning=FALSE, message=FALSE)
 options(knitr.kable.NA = '')
 theme_set(theme_bw())
 
+`%out%` <- function(a,b) ! a %in% b
+
 value_dpi <- 200
 ```
 
@@ -42,14 +44,17 @@ data_rain <- data_climate %>%
   filter(year %in% list_years) %>% 
   group_by(id, grid_id, year, hour) %>% 
   summarise(
+    n_total = n(),
     n_rain = length(rain[rain > 0]),
     n_rain_strong = length(rain[rain > threshold_rain]),
     n_rain_moderate = length(rain[rain <= threshold_rain & rain > 0]),
-    f_rain = n_rain / n(),
-    f_rain_strong =  n_rain_strong / n(),
-    f_rain_moderate =  n_rain_moderate / n(),
+    f_rain = n_rain / n_total,
+    f_rain_strong =  n_rain_strong / n_total,
+    f_rain_moderate =  n_rain_moderate / n_total,
     f_dry = 1 - f_rain,
-  )
+    ncm_dry = (f_dry * n_total) / 12,
+    ncm_rain = (f_rain * n_total) / 12
+  ) %>% ungroup()
 
 # export processed data
 write_rds(data_rain, "data/data_frequency_rain.rds", compress = "gz")
@@ -58,51 +63,86 @@ write_rds(data_rain, "data/data_frequency_rain.rds", compress = "gz")
 ```{r figures_static}
 
 data_rain <- read_rds("data/data_frequency_rain.rds")
-  
-plot_rain_model <- data_rain %>%
+
+# plot frequency of a dry commute as a function of time   
+plot_dry_model <- data_rain %>%
   ggplot(aes(x=hour, y=f_dry)) +
-  geom_point(alpha=0.5) + geom_smooth(se=FALSE) +
+  geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
   geom_rect(
     data=range_time,
     aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
     inherit.aes = FALSE, alpha=0.5) +
-  geom_hline(yintercept = 0.8, color="red") +
+  geom_hline(yintercept = 0.9, color="gray") +
   facet_grid(cols=vars(id)) +
-  labs(y="Frequency of a dry commute occuring during a [n-1, n] hour interval ")
+  scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  labs(
+    x = "Time at arrival",
+    y = "Frequency of a dry commute during a one hour interval"
+  ) 
 
+# plot number of rainy commutes per month as a function of time   
+plot_rain_model <- data_rain %>%
+  ggplot(aes(x=hour, y=ncm_rain)) +
+  geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
+  geom_rect(
+    data=range_time,
+    aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
+    inherit.aes = FALSE, alpha=0.5) +
+  geom_hline(yintercept = 3, color="gray") +
+  facet_grid(cols=vars(id)) +
+  scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  labs(
+    x = "Time at arrival",
+    y = "Number of rainy commute per month"
+  )
+
+# plot change in frequency of dry commute with years
 plot_rain_change <- data_rain %>% 
-  filter(hour %in% 8:10) %>% 
-  ggplot(aes(x=year, y=f_dry, color=as.factor(hour))) +
+  filter(hour %in% 7:9) %>% 
+  ggplot(aes(x=year, y=ncm_rain, color=as.factor(hour))) +
   geom_point() + geom_smooth(method = "lm") +
-  facet_grid(cols=vars(id))
+  geom_hline(yintercept = 3, color="grey") +
+  facet_grid(cols=vars(id)) +
+  scale_color_viridis_d(name = "Time at arrival", end = 0.8) +
+  theme(legend.position = "bottom") +
+  labs(
+    x = NULL,
+    y = "Number of rainy commute per month"
+  )
 
-# number of days with moderate or strong rain
+# plot change in number of rain days by shifting departure
 
 ```
 
 ```{r figures_animation}
+list_hours <- c(9, 18)
+
 data_rain <- read_rds("data/data_frequency_rain.rds")
 
-plot_frequency <- data_rain %>% 
+data_rain_subset <- data_rain %>% 
   select(id, year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
   pivot_longer(cols=c(strong, moderate, dry), names_to = "event") %>% 
-  mutate(event = factor(event, levels = c("strong", "moderate", "dry"))) %>%
+  mutate(event = factor(event, levels = c("strong", "moderate", "dry")))
+
+plot_frequency <- data_rain_subset %>%
   ggplot(aes(x=hour, y=value, fill=event)) +
-  geom_col() +
-  geom_hline(yintercept = 0.8, color="red") +
+  geom_col(data = . %>% filter(hour %in% 9)) +
+  geom_col(data = . %>% filter(hour %in% 18)) +
+  geom_col(data = . %>% filter(hour %out% list_hours), alpha=0.6) +
+  geom_hline(yintercept = 0.9, color="red") +
   facet_grid(cols = vars(id)) +
   scale_fill_viridis_d(end = 0.9) +
   labs(
     x = "Time at arrival",
-    y = "Frequency of events occuring during a one hour interval"
-  )
+    y = "Frequency during a one hour interval"
+  ) + theme(legend.position = "bottom")
 
 plot_frequency_anim <- plot_frequency + 
   transition_states(year, transition_length = 2, state_length = 1) +
-  ggtitle('Hourly rain events during year {closest_state}')
-
-animate(plot_frequency_anim, width = 600, height = 400, res = 80)
-
-anim_save()
+  ggtitle('Hourly rain events during year {closest_state}') 
+  
+plot_frequency_anim %>% 
+  animate(width = 800, height = 400, res = 80) %>% 
+  anim_save(animation=., "rain_frequency.gif", path="R/figures")
 
 ```
