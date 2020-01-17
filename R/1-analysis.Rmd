@@ -42,30 +42,60 @@ data_climate <- list_files %>% map_df(read_rds) %>%
   mutate(id = factor(id, levels = c("Caen", "Paris", "Toulouse", "Montpellier")))
 
 # compute frequency of rain events during each daily commute
-data_rain <- data_climate %>% 
+data_rain_year <- data_climate %>% 
   filter(year %in% list_years) %>% 
   group_by(id, grid_id, year, hour) %>% 
   summarise(
     n_total = n(),
     n_rain = length(rain[rain > 0]),
     n_rain_strong = length(rain[rain > threshold_rain]),
-    n_rain_moderate = length(rain[rain <= threshold_rain & rain > 0]),
+    n_rain_moderate = length(rain[rain <= threshold_rain & rain > 0])
+  ) %>%
+  group_by(id, grid_id, year) %>% 
+  mutate(
     f_rain = n_rain / n_total,
     f_rain_strong =  n_rain_strong / n_total,
     f_rain_moderate =  n_rain_moderate / n_total,
     f_dry = 1 - f_rain,
+    f_rain_delta = f_rain - lag(f_rain),
     ncm_dry = (f_dry * n_total) / 12,
     ncm_rain = (f_rain * n_total) / 12,
-    ncm_rain_strong = (f_rain_strong * n_total) / 12
+    ncm_rain_strong = (f_rain_strong * n_total) / 12,
+    ncm_rain_delta = (f_rain_delta * n_total) / 12,
+  ) %>% ungroup()
+
+# compute frequency of rain events during each daily commute
+data_rain_month <- data_climate %>% 
+  filter(year %in% list_years) %>% 
+  mutate(
+    month = month(date),
+    month_label = month(date, label = TRUE, locale = "C")
+  ) %>% 
+  group_by(id, grid_id, year, month, month_label, hour) %>% 
+  summarise(
+    n_total = n(),
+    n_rain = length(rain[rain > 0]),
+    n_rain_strong = length(rain[rain > threshold_rain]),
+    n_rain_moderate = length(rain[rain <= threshold_rain & rain > 0])
+  ) %>%
+  group_by(id, grid_id, year, month) %>% 
+  mutate(
+    f_rain = n_rain / n_total,
+    f_rain_strong =  n_rain_strong / n_total,
+    f_rain_moderate =  n_rain_moderate / n_total,
+    f_dry = 1 - f_rain,
+    f_rain_delta = f_rain - lag(f_rain),
+    n_rain_delta = (f_rain_delta * n_total),
   ) %>% ungroup()
 
 # export processed data
-write_rds(data_rain, "data/data_frequency_rain.rds", compress = "gz")
+write_rds(data_rain_year, "data/data_frequency_rain_year.rds", compress = "gz")
+write_rds(data_rain_month, "data/data_frequency_rain_month.rds", compress = "gz")
 ```
 
 ```{r figures_static}
 
-data_rain <- read_rds("data/data_frequency_rain.rds")
+data_rain <- read_rds("data/data_frequency_rain_year.rds")
 
 # plot frequency of a dry commute as a function of time   
 plot_dry_model <- data_rain %>%
@@ -99,6 +129,19 @@ plot_rain_model <- data_rain %>%
     y = "Number of rainy commute per month"
   )
 
+# plot different of number of rainy commutes between successive hours
+plot_rain_model <- data_rain %>%
+  filter(hour %in% 6:10) %>% 
+  ggplot(aes(x=hour, y=ncm_rain_delta)) +
+  geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
+  geom_hline(yintercept = 0, color="gray") +
+  facet_wrap(facets = vars(id), ncol=2) +
+  scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  labs(
+    x = "Time at arrival",
+    y = "Difference in rainy communes per month between consecutive hours"
+  )
+
 # plot change in frequency of dry commute with years
 plot_rain_change <- data_rain %>% 
   filter(hour %in% 7:9) %>% 
@@ -112,8 +155,6 @@ plot_rain_change <- data_rain %>%
     x = NULL,
     y = "Number of rainy commute per month"
   )
-
-# plot change in number of rain days by shifting departure
 
 # count rainy commutes
 table_rain <- data_rain %>% 
