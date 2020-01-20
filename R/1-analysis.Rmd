@@ -17,7 +17,13 @@ theme_set(theme_bw())
 
 `%out%` <- function(a,b) ! a %in% b
 
+# constants
 value_dpi <- 200
+list_hours <- 6:20
+
+# scales
+scale_hour <- scale_x_continuous(breaks=seq(6, 20, 2))
+
 ```
 
 ```{r data_frequency, eval=FALSE}
@@ -93,12 +99,13 @@ write_rds(data_rain_year, "data/data_frequency_rain_year.rds", compress = "gz")
 write_rds(data_rain_month, "data/data_frequency_rain_month.rds", compress = "gz")
 ```
 
-```{r figures_static}
+```{r figures_year}
 
-data_rain <- read_rds("data/data_frequency_rain_year.rds")
+data_year <- read_rds("data/data_frequency_rain_year.rds")
 
 # plot frequency of a dry commute as a function of time   
-plot_dry_model <- data_rain %>%
+plot_dry_model <- data_year %>%
+  filter(hour %in% list_hours) %>% 
   ggplot(aes(x=hour, y=f_dry)) +
   geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
   geom_rect(
@@ -108,13 +115,15 @@ plot_dry_model <- data_rain %>%
   geom_hline(yintercept = 0.9, color="gray") +
   facet_wrap(facets = vars(id), ncol=2) +
   scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  scale_hour +
   labs(
     x = "Time at arrival",
     y = "Frequency of a dry commute during a one hour interval"
   ) 
 
 # plot number of rainy commutes per month as a function of time   
-plot_rain_model <- data_rain %>%
+plot_rain_model <- data_year %>%
+  filter(hour %in% list_hours) %>% 
   ggplot(aes(x=hour, y=ncm_rain)) +
   geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
   geom_rect(
@@ -124,13 +133,14 @@ plot_rain_model <- data_rain %>%
   geom_hline(yintercept = 3, color="gray") +
   facet_wrap(facets = vars(id), ncol=2) +
   scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  scale_hour +
   labs(
     x = "Time at arrival",
     y = "Number of rainy commute per month"
   )
 
 # plot different of number of rainy commutes between successive hours
-plot_rain_model <- data_rain %>%
+plot_rain_delta <- data_year %>%
   filter(hour %in% 6:10) %>% 
   ggplot(aes(x=hour, y=ncm_rain_delta)) +
   geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
@@ -139,11 +149,11 @@ plot_rain_model <- data_rain %>%
   scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
   labs(
     x = "Time at arrival",
-    y = "Difference in rainy communes per month between consecutive hours"
+    y = "Difference between consecutive hours (commutes per month)"
   )
 
 # plot change in frequency of dry commute with years
-plot_rain_change <- data_rain %>% 
+plot_rain_change <- data_year %>% 
   filter(hour %in% 7:9) %>% 
   ggplot(aes(x=year, y=ncm_rain, color=as.factor(hour))) +
   geom_point() + geom_smooth(method = "lm") +
@@ -157,7 +167,7 @@ plot_rain_change <- data_rain %>%
   )
 
 # count rainy commutes
-table_rain <- data_rain %>% 
+table_rain <- data_year %>% 
   filter(hour %in% c(7:9, 18)) %>% 
   group_by(id, hour) %>% 
   summarise(
@@ -165,26 +175,30 @@ table_rain <- data_rain %>%
     ncy_rain_strong = mean(ncm_rain_strong * 12)
     )
 
+# export
+ggsave(plot_rain_model, file="R/figures/rain_model.png", width=70, height=70, units="mm", scale=2, dpi=value_dpi)
+ggsave(plot_rain_delta, file="R/figures/rain_delta.png", width=70, height=70, units="mm", scale=2, dpi=value_dpi)
+
 ```
 
-```{r figures_animation}
-list_hours <- c(9, 18)
+```{r figures_year_animation}
+data_year <- read_rds("data/data_frequency_rain.rds")
 
-data_rain <- read_rds("data/data_frequency_rain.rds")
-
-data_rain_subset <- data_rain %>% 
+data_year_subset <- data_year %>%
+  filter(hour %in% list_hours) %>% 
   select(id, year, hour, strong=f_rain_strong, moderate=f_rain_moderate, dry=f_dry) %>% 
   pivot_longer(cols=c(strong, moderate, dry), names_to = "rain") %>% 
   mutate(rain = factor(rain, levels = c("strong", "moderate", "dry")))
 
-plot_frequency <- data_rain_subset %>%
+plot_frequency <- data_year_subset %>%
   ggplot(aes(x=hour, y=value, fill=rain)) +
   geom_col(data = . %>% filter(hour %in% 9)) +
   geom_col(data = . %>% filter(hour %in% 18)) +
-  geom_col(data = . %>% filter(hour %out% list_hours), alpha=0.6) +
+  geom_col(data = . %>% filter(hour %out% c(9, 18)), alpha=0.6) +
   geom_hline(yintercept = 0.9, color="red") +
   facet_wrap(facets = vars(id), ncol=2) +
   scale_fill_viridis_d(end = 0.9) +
+  scale_hour +
   labs(
     x = "Time at arrival",
     y = "Frequency over one year"
@@ -195,7 +209,44 @@ plot_frequency_anim <- plot_frequency +
   ggtitle('Hourly rain events during year {closest_state}') 
   
 plot_frequency_anim %>% 
-  animate(width = 600, height = 600, res = 80) %>% 
+  animate(width = 600, height = 600, res = 100) %>% 
   anim_save(animation=., "rain_frequency.gif", path="R/figures")
+
+```
+
+```{r figures_month}
+
+data_month <- read_rds("data/data_frequency_rain_month.rds")
+
+# plot frequency of a dry commute as a function of time   
+plot_dry_model <- data_month %>%
+  filter(id=="Toulouse", hour %in% list_hours) %>% 
+  ggplot(aes(x=hour, y=f_dry)) +
+  geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
+  geom_rect(
+    data=range_time,
+    aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax),
+    inherit.aes = FALSE, alpha=0.5) +
+  geom_hline(yintercept = 0.9, color="gray") +
+  facet_wrap(facets = vars(month_label), ncol=3) +
+  scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  labs(
+    x = "Time at arrival",
+    y = "Frequency of a dry commute during a one hour interval"
+  ) 
+
+# get month with largest differences in rainy commutes when delaying departures
+# january, october, december
+plot_rain_delta <- data_month %>%
+  filter(id=="Toulouse", hour %in% 6:10) %>% 
+  ggplot(aes(x=hour, y=n_rain_delta)) +
+  geom_point(aes(color=year), alpha=0.5) + geom_smooth(se=FALSE) +
+  geom_hline(yintercept = 0, color="gray") +
+  facet_wrap(facets = vars(month_label), ncol=3) +
+  scale_color_viridis_c(name = "Year", end = 0.8, option = "plasma") +
+  labs(
+    x = "Time at arrival",
+    y = "Difference in rainy communes per month between consecutive hours"
+  )
 
 ```
